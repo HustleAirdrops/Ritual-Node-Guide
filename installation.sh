@@ -45,7 +45,6 @@ replace_placeholder() {
         echo "Error: File $file not found for replacement"
         return 1
     }
-}
 
 # Function to check if a command exists
 check_command() {
