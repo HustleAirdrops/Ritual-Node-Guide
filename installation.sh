@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Exit on error, unset variable, and pipeline failure
 set -euo pipefail
 
 # Function for secure user input
@@ -40,9 +41,10 @@ replace_placeholder() {
     
     if [ -f "$file" ]; then
         sed -i "s/$placeholder/$value/g" "$file"
-    else
-        echo "Error: File $file not found for replacement"
-        return 1
+        else
+            echo "Error: File $file not found for replacement"
+            return 1
+        fi
     }
 
 # Function to check if a command exists
