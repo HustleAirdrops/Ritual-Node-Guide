@@ -34,7 +34,7 @@ check_status() {
     local message=$1
     local allow_timeout=$2
     if [ "$allow_timeout" = "allow_timeout" ]; then
-        if [ $exit_code -ne 0 ] && [ $exit_code -ne 143 ] && [ $exit_code -ne 124 ]; then
+        if [ $exit_code -ne 0 ] && [ $exit_code -ne 124 ] && [ $exit_code -ne 143 ]; then
             error_exit "$message"
         fi
     else
@@ -434,6 +434,7 @@ CONTRACT_OUTPUT=$(env project=hello-world make deploy-contracts 2>&1)
 check_status "Failed to deploy contracts"
 CONTRACT_ADDRESS=$(echo "$CONTRACT_OUTPUT" | grep "Deployed SaysHello" | awk '{print $3}' | head -n 1)
 if [ -z "$CONTRACT_ADDRESS" ]; then
+    log "Contract output for debugging: $CONTRACT_OUTPUT" "$YELLOW"
     error_exit "Failed to extract contract address"
 fi
 echo "$CONTRACT_ADDRESS" > "$CONTRACT_ADDRESS_FILE"
@@ -467,6 +468,7 @@ check_status "Failed to update CallContract.s.sol"
 
 # **Step 18: Call Contract**
 log "Calling contract..." "$YELLOW"
+cd "$CONFIG_DIR" || error_exit "Failed to change to $CONFIG_DIR"
 env project=hello-world make call-contract
 check_status "Failed to call contract"
 
