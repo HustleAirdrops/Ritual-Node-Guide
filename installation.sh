@@ -73,38 +73,41 @@ install_infernet_node() {
     
     # System updates
     echo -e "\nUpdating system packages..."
-    sudo apt update -y && sudo apt upgrade -y
-    sudo apt -qy install curl git nano jq lz4 build-essential screen apt-transport-https ca-certificates software-properties-common
+    sudo DEBIAN_FRONTEND=noninteractive apt update -y
+    sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y
+    sudo DEBIAN_FRONTEND=noninteractive apt -qy install curl git nano jq lz4 build-essential screen apt-transport-https ca-certificates software-properties-common
     
     # Docker installation
     echo -e "\nInstalling Docker..."
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    sudo apt update -y && sudo apt install -y docker-ce
+    sudo DEBIAN_FRONTEND=noninteractive apt update -y
+    sudo DEBIAN_FRONTEND=noninteractive apt install -y docker-ce
     sudo systemctl enable --now docker
     sudo usermod -aG docker "$USER"
     
     # Docker Compose installation
     echo -e "\nInstalling Docker Compose..."
-    local compose_url=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r '.assets[].browser_download_url | select(contains("linux-x86_64"))')
-    sudo curl -L "$compose_url" -o /usr/local/bin/docker-compose
+    COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)
+    sudo curl -L "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     sudo chmod +x /usr/local/bin/docker-compose
     
     # Firewall setup
     echo -e "\nConfiguring firewall..."
-    sudo apt install ufw -y
-    sudo ufw allow 22
-    sudo ufw allow 3000
-    sudo ufw allow 4000
-    sudo ufw allow 6379
-    sudo ufw allow 8545
-    sudo ufw allow 8600
-    sudo ufw allow ssh
-    echo "y" | sudo ufw enable
+    sudo DEBIAN_FRONTEND=noninteractive apt install ufw -y
+    sudo ufw allow 22 >/dev/null
+    sudo ufw allow 3000 >/dev/null
+    sudo ufw allow 4000 >/dev/null
+    sudo ufw allow 6379 >/dev/null
+    sudo ufw allow 8545 >/dev/null
+    sudo ufw allow 8600 >/dev/null
+    sudo ufw allow ssh >/dev/null
+    echo "y" | sudo ufw enable >/dev/null
     
     # Clone and modify project
     echo -e "\nSetting up project..."
     cd "$HOME"
+    [ -d infernet-container-starter ] && rm -rf infernet-container-starter
     git clone https://github.com/ritual-net/infernet-container-starter
     cd infernet-container-starter
     grep -rl "3000" . | xargs sed -i 's/3000/8600/g'
@@ -331,7 +334,7 @@ EOL
     echo -e "\nDeploying contracts..."
     cd ~/infernet-container-starter
     if output=$(project=hello-world make deploy-contracts 2>&1); then
-        contract_address=$(echo "$output" | awk '/Contract Address:/ {print $3}')
+        contract_address=$(echo "$output" | grep -oP 'Contract Address: \K0x\S+')
         echo "Contract deployed at: $contract_address"
         
         # Update call contract script
