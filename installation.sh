@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Advanced Node Installation Script
-# Purpose: Automate the setup of an Infernet node with Docker, Foundry, and contract deployment
+# Node Installation Script
+# Purpose: Infernet node setup with Docker, Foundry, and contract deployment
 # Date: June 08, 2025
 
 # Configuration Variables
@@ -56,50 +56,50 @@ echo "Node Installation Log - $TIMESTAMP" > "$LOG_FILE"
 log "Starting node installation process..."
 
 # **Step 1: Update System and Install Dependencies**
-log "Updating system and installing dependencies..." "$YELLOW"
-cd "$HOME" || error_exit "Failed to change to home directory"
+log "System update aur dependencies install kar raha hu..." "$YELLOW"
+cd "$HOME" || error_exit "Home directory mein jane mein fail hua"
 sudo apt update && sudo apt upgrade -y
-check_status "Failed to update system packages"
+check_status "System packages update nahi hue"
 sudo apt -qy install curl git nano jq lz4 build-essential screen -y
-check_status "Failed to install basic dependencies"
+check_status "Basic dependencies install nahi hue"
 sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
-check_status "Failed to install additional dependencies"
+check_status "Additional dependencies install nahi hue"
 
 # **Step 2: Install Docker**
-log "Installing Docker..." "$YELLOW"
+log "Docker install kar raha hu..." "$YELLOW"
 if ! command -v docker &> /dev/null; then
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-    check_status "Failed to add Docker GPG key"
+    check_status "Docker GPG key add nahi hui"
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    check_status "Failed to add Docker repository"
+    check_status "Docker repository add nahi hua"
     sudo apt update && sudo apt install -y docker-ce
-    check_status "Failed to install Docker"
+    check_status "Docker install nahi hua"
     sudo systemctl enable --now docker
-    check_status "Failed to enable Docker service"
+    check_status "Docker service enable nahi hui"
     sudo usermod -aG docker "$USER"
-    check_status "Failed to add user to Docker group"
+    check_status "User ko Docker group mein add nahi kiya"
     newgrp docker
 else
-    log "Docker already installed, skipping." "$GREEN"
+    log "Docker pehle se installed hai, skip kar raha hu." "$GREEN"
 fi
 
 # **Step 3: Install Docker Compose**
-log "Installing Docker Compose..." "$YELLOW"
+log "Docker Compose install kar raha hu..." "$YELLOW"
 if ! command -v docker-compose &> /dev/null; then
     DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)
     sudo curl -L "https://github.com/docker/compose/releases/download/$DOCKER_COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    check_status "Failed to download Docker Compose"
+    check_status "Docker Compose download nahi hua"
     sudo chmod +x /usr/local/bin/docker-compose
-    check_status "Failed to set Docker Compose permissions"
+    check_status "Docker Compose permissions set nahi hue"
 else
-    log "Docker Compose already installed, skipping." "$GREEN"
+    log "Docker Compose pehle se installed hai, skip kar raha hu." "$GREEN"
 fi
 
 # **Step 4: Configure UFW Firewall**
-log "Configuring UFW firewall..." "$YELLOW"
+log "UFW firewall configure kar raha hu..." "$YELLOW"
 if ! command -v ufw &> /dev/null; then
     sudo apt install ufw -y
-    check_status "Failed to install UFW"
+    check_status "UFW install nahi hua"
 fi
 sudo ufw allow 22
 sudo ufw allow 3000
@@ -108,38 +108,41 @@ sudo ufw allow 6379
 sudo ufw allow 8545
 sudo ufw allow ssh
 sudo ufw --force enable
-check_status "Failed to configure UFW"
+check_status "UFW configure nahi hua"
 
 # **Step 5: Clone Repository and Modify Port**
-log "Cloning repository and modifying port..." "$YELLOW"
+log "Repository clone kar raha hu aur port modify kar raha hu..." "$YELLOW"
 if [ ! -d "$CONFIG_DIR" ]; then
     git clone https://github.com/ritual-net/infernet-container-starter "$CONFIG_DIR"
-    check_status "Failed to clone repository"
+    check_status "Repository clone nahi hua"
 fi
-cd "$CONFIG_DIR" || error_exit "Failed to change to $CONFIG_DIR"
+cd "$CONFIG_DIR" || error_exit "$CONFIG_DIR mein jane mein fail hua"
 find . -type f -exec grep -l "3000" {} + | xargs sed -i 's/3000/8600/g'
-check_status "Failed to replace port 3000 with 8600"
+check_status "Port 3000 ko 8600 se replace nahi kiya"
 
-# **Step 6: Pull and Deploy Hello-World Container**
-log "Pulling and deploying hello-world container..." "$YELLOW"
+# **Step 6: Pull and Run Hello-World Container for 5 Seconds**
+log "Hello-world Docker image pull kar raha hu..." "$YELLOW"
 docker pull ritualnetwork/hello-world-infernet:latest
-check_status "Failed to pull Docker image"
-project=hello-world make deploy-container
-check_status "Failed to deploy container"
-log "Stopping container..." "$YELLOW"
+check_status "Docker image pull nahi hui"
+
+log "project=hello-world make deploy-container 5 seconds ke liye run kar raha hu..." "$YELLOW"
+timeout 5s project=hello-world make deploy-container
+check_status "make deploy-container run nahi hua"
+
+log "Running containers stop kar raha hu..." "$YELLOW"
 docker compose -f deploy/docker-compose.yaml stop
-check_status "Failed to stop container"
+check_status "Containers stop nahi hue"
 
 # **Step 7: Prompt for Private Key and RPC URL**
-log "Prompting for private key and RPC URL..." "$YELLOW"
-read -s -p "Enter your EVM wallet private key (starts with 0x): " PRIVATE_KEY
+log "Private key aur RPC URL mang raha hu..." "$YELLOW"
+read -s -p "Apna EVM wallet private key daal do (0x se start hona chahiye): " PRIVATE_KEY
 echo
 validate_private_key "$PRIVATE_KEY"
-read -p "Enter your Base Mainnet RPC URL: " RPC_URL
+read -p "Apna Base Mainnet RPC URL daal do: " RPC_URL
 validate_rpc_url "$RPC_URL"
 
 # **Step 8: Update deploy/config.json**
-log "Updating deploy/config.json..." "$YELLOW"
+log "deploy/config.json update kar raha hu..." "$YELLOW"
 CONFIG_FILE="$CONFIG_DIR/deploy/config.json"
 rm -f "$CONFIG_FILE"
 cat << EOF > "$CONFIG_FILE"
@@ -193,10 +196,10 @@ cat << EOF > "$CONFIG_FILE"
     ]
 }
 EOF
-check_status "Failed to create deploy/config.json"
+check_status "deploy/config.json create nahi hua"
 
 # **Step 9: Update projects/hello-world/container/config.json**
-log "Updating projects/hello-world/container/config.json..." "$YELLOW"
+log "projects/hello-world/container/config.json update kar raha hu..." "$YELLOW"
 CONFIG_FILE="$CONFIG_DIR/projects/hello-world/container/config.json"
 rm -f "$CONFIG_FILE"
 cat << EOF > "$CONFIG_FILE"
@@ -250,10 +253,10 @@ cat << EOF > "$CONFIG_FILE"
     ]
 }
 EOF
-check_status "Failed to create projects/hello-world/container/config.json"
+check_status "projects/hello-world/container/config.json create nahi hua"
 
 # **Step 10: Update Deploy.s.sol**
-log "Updating Deploy.s.sol..." "$YELLOW"
+log "Deploy.s.sol update kar raha hu..." "$YELLOW"
 DEPLOY_FILE="$CONFIG_DIR/projects/hello-world/contracts/script/Deploy.s.sol"
 rm -f "$DEPLOY_FILE"
 cat <<EOF > "$DEPLOY_FILE"
@@ -284,10 +287,10 @@ contract Deploy is Script {
     }
 }
 EOF
-check_status "Failed to create Deploy.s.sol"
+check_status "Deploy.s.sol create nahi hua"
 
 # **Step 11: Update Makefile**
-log "Updating Makefile..." "$YELLOW"
+log "Makefile update kar raha hu..." "$YELLOW"
 MAKEFILE="$CONFIG_DIR/projects/hello-world/contracts/Makefile"
 rm -f "$MAKEFILE"
 cat << EOF > "$MAKEFILE"
@@ -306,10 +309,10 @@ deploy:
 call-contract:
     @PRIVATE_KEY=\$(sender) forge script script/CallContract.s.sol:CallContract --broadcast --rpc-url \$(RPC_URL)
 EOF
-check_status "Failed to create Makefile"
+check_status "Makefile create nahi hua"
 
 # **Step 12: Update docker-compose.yaml**
-log "Updating docker-compose.yaml..." "$YELLOW"
+log "docker-compose.yaml update kar raha hu..." "$YELLOW"
 DOCKER_COMPOSE="$CONFIG_DIR/deploy/docker-compose.yaml"
 rm -f "$DOCKER_COMPOSE"
 cat <<EOF > "$DOCKER_COMPOSE"
@@ -379,52 +382,52 @@ volumes:
   node-logs:
   redis-data:
 EOF
-check_status "Failed to create docker-compose.yaml"
+check_status "docker-compose.yaml create nahi hua"
 
 # **Step 13: Install Foundry**
-log "Installing Foundry..." "$YELLOW"
+log "Foundry install kar raha hu..." "$YELLOW"
 if ! command -v forge &> /dev/null; then
     curl -L https://foundry.paradigm.xyz | bash
-    check_status "Failed to install Foundry"
+    check_status "Foundry install nahi hua"
     echo 'export PATH="$HOME/.foundry/bin:$PATH"' >> "$HOME/.bashrc"
     source "$HOME/.bashrc"
     foundryup
-    check_status "Failed to update Foundry"
+    check_status "Foundry update nahi hua"
 else
-    log "Foundry already installed, skipping." "$GREEN"
+    log "Foundry pehle se installed hai, skip kar raha hu." "$GREEN"
 fi
 
 # **Step 14: Install Forge Dependencies**
-log "Installing Forge dependencies..." "$YELLOW"
-cd "$CONFIG_DIR/projects/hello-world/contracts" || error_exit "Failed to change to contracts directory"
+log "Forge dependencies install kar raha hu..." "$YELLOW"
+cd "$CONFIG_DIR/projects/hello-world/contracts" || error_exit "Contracts directory mein jane mein fail hua"
 rm -rf lib/forge-std lib/infernet-sdk
 forge install foundry-rs/forge-std
-check_status "Failed to install forge-std"
+check_status "forge-std install nahi hua"
 forge install ritual-net/infernet-sdk
-check_status "Failed to install infernet-sdk"
-ls -ld "$CONFIG_DIR/projects/hello-world/contracts/lib/forge-std" || error_exit "forge-std lib not found"
-ls -ld "$CONFIG_DIR/projects/hello-world/contracts/lib/infernet-sdk" || error_exit "infernet-sdk lib not found"
+check_status "infernet-sdk install nahi hua"
+ls -ld "$CONFIG_DIR/projects/hello-world/contracts/lib/forge-std" || error_exit "forge-std lib nahi mili"
+ls -ld "$CONFIG_DIR/projects/hello-world/contracts/lib/infernet-sdk" || error_exit "infernet-sdk lib nahi mili"
 
 # **Step 15: Start Docker Compose**
-log "Starting Docker Compose..." "$YELLOW"
-cd "$HOME" || error_exit "Failed to change to home directory"
+log "Docker Compose start kar raha hu..." "$YELLOW"
+cd "$HOME" || error_exit "Home directory mein jane mein fail hua"
 docker compose -f "$CONFIG_DIR/deploy/docker-compose.yaml" up -d
-check_status "Failed to start Docker Compose"
+check_status "Docker Compose start nahi hua"
 
 # **Step 16: Deploy Contracts and Capture Address**
-log "Deploying contracts..." "$YELLOW"
-cd "$CONFIG_DIR" || error_exit "Failed to change to $CONFIG_DIR"
+log "Contracts deploy kar raha hu..." "$YELLOW"
+cd "$CONFIG_DIR" || error_exit "$CONFIG_DIR mein jane mein fail hua"
 CONTRACT_OUTPUT=$(project=hello-world make deploy-contracts 2>&1)
-check_status "Failed to deploy contracts"
+check_status "Contracts deploy nahi hue"
 CONTRACT_ADDRESS=$(echo "$CONTRACT_OUTPUT" | grep "Contract Address" | awk '{print $3}' | head -n 1)
 if [ -z "$CONTRACT_ADDRESS" ]; then
-    error_exit "Failed to extract contract address"
+    error_exit "Contract address extract nahi hua"
 fi
 echo "$CONTRACT_ADDRESS" > "$CONTRACT_ADDRESS_FILE"
 log "Contract Address: $CONTRACT_ADDRESS saved to $CONTRACT_ADDRESS_FILE" "$GREEN"
 
 # **Step 17: Update CallContract.s.sol**
-log "Updating CallContract.s.sol..." "$YELLOW"
+log "CallContract.s.sol update kar raha hu..." "$YELLOW"
 CALL_CONTRACT_FILE="$CONFIG_DIR/projects/hello-world/contracts/script/CallContract.s.sol"
 cat << EOF > "$CALL_CONTRACT_FILE"
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -447,31 +450,31 @@ contract CallContract is Script {
     }
 }
 EOF
-check_status "Failed to update CallContract.s.sol"
+check_status "CallContract.s.sol update nahi hua"
 
 # **Step 18: Call Contract**
-log "Calling contract..." "$YELLOW"
+log "Contract call kar raha hu..." "$YELLOW"
 project=hello-world make call-contract
-check_status "Failed to call contract"
+check_status "Contract call nahi hua"
 
 # **Step 19: Display Completion Message**
-log "Node installation and configuration completed successfully!" "$GREEN"
+log "Node installation aur configuration successfully complete hua!" "$GREEN"
 cat << EOF
 
-Congratulations! Your node is up and running. Please save the following details:
+Congratulations! Aapka node setup ho gaya hai. Niche details save kar lo:
 
 - **Contract Address**: $CONTRACT_ADDRESS
 - **Log File**: $LOG_FILE
 - **Contract Address File**: $CONTRACT_ADDRESS_FILE
 - **Important Notes**:
-  - Keep your private key and RPC URL secure.
-  - Check $LOG_FILE for troubleshooting.
-  - Your node is running in the background via Docker Compose.
+  - Apna private key aur RPC URL secure rakho.
+  - Agar problem ho to $LOG_FILE check karo.
+  - Node background mein Docker Compose ke through chal raha hai.
 
-You can monitor the node with:
+Node ko monitor karne ke liye:
 $ docker compose -f $CONFIG_DIR/deploy/docker-compose.yaml logs -f
 
-Thank you for using this script!
+Script use karne ke liye shukriya!
 EOF
 
-log "Installation process ended." "$GREEN"
+log "Installation process khatam hua." "$GREEN"
