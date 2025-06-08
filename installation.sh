@@ -126,7 +126,11 @@ docker pull ritualnetwork/hello-world-infernet:latest
 check_status "Docker image pull nahi hui"
 
 log "project=hello-world make deploy-container 5 seconds ke liye run kar raha hu..." "$YELLOW"
-timeout 5s project=hello-world make deploy-container
+cd "$CONFIG_DIR" || error_exit "CONFIG_DIR mein jane mein fail hua"
+if [ ! -f "Makefile" ]; then
+    error_exit "Makefile nahi mila in $CONFIG_DIR"
+fi
+timeout 5s env project=hello-world make deploy-container
 check_status "make deploy-container run nahi hua"
 
 log "Running containers stop kar raha hu..." "$YELLOW"
@@ -417,7 +421,7 @@ check_status "Docker Compose start nahi hua"
 # **Step 16: Deploy Contracts and Capture Address**
 log "Contracts deploy kar raha hu..." "$YELLOW"
 cd "$CONFIG_DIR" || error_exit "$CONFIG_DIR mein jane mein fail hua"
-CONTRACT_OUTPUT=$(project=hello-world make deploy-contracts 2>&1)
+CONTRACT_OUTPUT=$(env project=hello-world make deploy-contracts 2>&1)
 check_status "Contracts deploy nahi hue"
 CONTRACT_ADDRESS=$(echo "$CONTRACT_OUTPUT" | grep "Contract Address" | awk '{print $3}' | head -n 1)
 if [ -z "$CONTRACT_ADDRESS" ]; then
@@ -454,7 +458,7 @@ check_status "CallContract.s.sol update nahi hua"
 
 # **Step 18: Call Contract**
 log "Contract call kar raha hu..." "$YELLOW"
-project=hello-world make call-contract
+env project=hello-world make call-contract
 check_status "Contract call nahi hua"
 
 # **Step 19: Display Completion Message**
