@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Exit on error, unset variable, and pipeline failure
 set -euo pipefail
 
 # Function for secure user input
