@@ -10,10 +10,10 @@ secure_input() {
     local hidden="$3"
     
     if [ "$hidden" = true ]; then
-        IFS= read -rsp "$prompt: " $var_name
+        IFS= read -rsp "$prompt: " "$var_name"
         echo
     else
-        read -rp "$prompt: " $var_name
+        read -rp "$prompt: " "$var_name"
     fi
 }
 
@@ -44,81 +44,94 @@ replace_placeholder() {
     else
         echo "Error: File $file not found for replacement"
         return 1
+    }
+}
+
+# Function to check if a command exists
+check_command() {
+    if ! command -v "$1" >/dev/null; then
+        echo "Error: $1 is not installed but is required."
+        exit 1
     fi
 }
 
-# Function to handle container deployment with timeout
-deploy_with_timeout() {
-    local timeout=8
-    echo "Starting container deployment (will auto-stop after ${timeout}s)..."
-    
-    # Start in background
-    project=hello-world make deploy-container > /dev/null 2>&1 &
-    local pid=$!
-    
-    # Wait for specified time
-    sleep $timeout
-    
-    # Stop the process
-    if kill -0 $pid > /dev/null 2>&1; then
-        kill -TERM $pid
-        wait $pid
+# Function to handle container deployment
+deploy_container() {
+    echo "Starting container deployment..."
+    if ! project=hello-world; then
+        make deploy-container
+        echo "Container deployed successfully"
+    else
+        echo "Error: Failed to deploy container"
+        exit 1
     fi
-    echo "Container deployment stopped"
 }
 
 # Main installation process
 install_infernet_node() {
-    echo "Starting Infernet Node installation..."
-    
+    echo "Starting Infernet Node Installation..."
+
+    # Check for required commands
+    check_command "curl"
+    check_command "git"
+    check_command "jq"
+
     # System updates
     echo -e "\nUpdating system packages..."
     sudo DEBIAN_FRONTEND=noninteractive apt update -y
     sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y
-    sudo DEBIAN_FRONTEND=noninteractive apt -qy install curl git nano jq lz4 build-essential screen apt-transport-https ca-certificates software-properties-common
-    
-    # Docker installation
+    sudo DEBIAN_FRONTEND=noninteractive apt -y install curl git nano jq lz4 build-essential screen apt-transport-https ca-certificates software-properties-common
+
+    # Install Docker
     echo -e "\nInstalling Docker..."
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    sudo DEBIAN_FRONTEND=noninteractive apt update -y
-    sudo DEBIAN_FRONTEND=noninteractive apt install -y docker-ce
+    if ! command -v docker >/dev/null; then
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        sudo DEBIAN_FRONTEND=noninteractive apt update -y
+        sudo DEBIAN_FRONTEND=noninteractive apt install -y docker-ce docker-ce-cli containerd.io
+    fi
     sudo systemctl enable --now docker
     sudo usermod -aG docker "$USER"
-    
-    # Docker Compose installation
+
+    # Install Docker Compose
     echo -e "\nInstalling Docker Compose..."
-    COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)
-    sudo curl -L "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    sudo chmod +x /usr/local/bin/docker-compose
-    
+    if ! command -v docker-compose >/dev/null; then
+        COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)
+        sudo curl -L "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        sudo chmod +x /usr/local/bin/docker-compose
+    fi
+
     # Firewall setup
     echo -e "\nConfiguring firewall..."
     sudo DEBIAN_FRONTEND=noninteractive apt install ufw -y
-    sudo ufw allow 22 >/dev/null
-    sudo ufw allow 3000 >/dev/null
-    sudo ufw allow 4000 >/dev/null
-    sudo ufw allow 6379 >/dev/null
-    sudo ufw allow 8545 >/dev/null
-    sudo ufw allow 8600 >/dev/null
-    sudo ufw allow ssh >/dev/null
-    echo "y" | sudo ufw enable >/dev/null
-    
-    # Clone and modify project
+    sudo ufw allow 22
+    sudo ufw allow 3000
+    sudo ufw allow 4000
+    sudo ufw allow 6379
+    sudo ufw allow 8545
+    sudo ufw allow 8600
+    sudo ufw allow ssh
+    echo "y" | sudo ufw enable
+
+    # Clone and setup project
     echo -e "\nSetting up project..."
     cd "$HOME"
-    [ -d infernet-container-starter ] && rm -rf infernet-container-starter
+    [ -d "infernet-container-starter" ] && rm -rf infernet-container-starter
     git clone https://github.com/ritual-net/infernet-container-starter
     cd infernet-container-starter
-    grep -rl "3000" . | xargs sed -i 's/3000/8600/g'
-    
+    # Update port mappings
+    find . -type f -exec sed -i 's/3000/8600/g' {} +
+
     # Pull Docker image
     echo -e "\nPulling container image..."
-    docker pull ritualnetwork/hello-world-infernet:latest
-    
-    # Deploy container with timeout
-    deploy_with_timeout
-    
+    if ! docker pull ritualnetwork/hello-world-infernet:latest; then
+        echo "Error: Failed to pull Docker image"
+        exit 1
+    fi
+
+    # Deploy container
+    deploy_container
+
     # Get user inputs
     echo -e "\nEnter your credentials:"
     while true; do
@@ -130,14 +143,14 @@ install_infernet_node() {
         secure_input "Enter EVM private key (0x...)" PRIVATE_KEY true
         validate_private_key "$PRIVATE_KEY" && break
     done
-    
+
     # Generate escaped values for sed
-    ESC_RPC_URL=$(printf '%s\n' "$RPC_URL" | sed 's:[\/&]:\\&:g;$!s/$/\\/')
-    ESC_PRIVATE_KEY=$(printf '%s\n' "$PRIVATE_KEY" | sed 's:[\/&]:\\&:g;$!s/$/\\/')
-    
+    ESC_RPC_URL=$(printf '%s\n' "$RPC_URL" | sed 's:[\/&]:\\&:g')
+    ESC_PRIVATE_KEY=$(printf '%s\n' "$PRIVATE_KEY" | sed 's:[\/&]:\\&:g')
+
     # Configuration files setup
     echo -e "\nConfiguring application..."
-    
+
     # Create config files
     CONFIG_CONTENT='{
     "log_path": "infernet_node.log",
@@ -188,11 +201,11 @@ install_infernet_node() {
         }
     ]
 }'
-    
+
     # Write config files
     echo "$CONFIG_CONTENT" | sed "s/RPC_URL/$ESC_RPC_URL/g; s/PRIVATE_KEY/$ESC_PRIVATE_KEY/g" > deploy/config.json
     echo "$CONFIG_CONTENT" | sed "s/RPC_URL/$ESC_RPC_URL/g; s/PRIVATE_KEY/$ESC_PRIVATE_KEY/g" > projects/hello-world/container/config.json
-    
+
     # Create contract deployment script
     cat > projects/hello-world/contracts/script/Deploy.s.sol << 'EOL'
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -218,27 +231,22 @@ contract Deploy is Script {
 
         // Execute
         vm.stopBroadcast();
-        vm.broadcast();
     }
 }
 EOL
 
     # Create Makefile
     cat > projects/hello-world/contracts/Makefile << EOL
-# phony targets are targets that don't actually create a file
-.phony: deploy
+.PHONY: deploy call-contract
 
-# anvil's third default address
 sender := $PRIVATE_KEY
 RPC_URL := $RPC_URL
 
-# deploying the contract
 deploy:
-	@PRIVATE_KEY=\$(sender) forge script script/Deploy.s.sol:Deploy --broadcast --rpc-url \$(RPC_URL)
+    @PRIVATE_KEY=\$(sender) forge script script/Deploy.s.sol:Deploy --broadcast --rpc-url \$(RPC_URL) --legacy
 
-# calling sayGM()
 call-contract:
-	@PRIVATE_KEY=\$(sender) forge script script/CallContract.s.sol:CallContract --broadcast --rpc-url \$(RPC_URL)
+    @PRIVATE_KEY=\$(sender) forge script script/CallContract.s.sol:CallContract --broadcast --rpc-url \$(RPC_URL) --legacy
 EOL
 
     # Create docker-compose.yaml
@@ -268,7 +276,7 @@ services:
   redis:
     image: redis:7.4.0
     ports:
-    - "6379:6379"
+      - "6379:6379"
     networks:
       - network
     volumes:
@@ -310,40 +318,90 @@ volumes:
   redis-data:
 EOL
 
+    # Create redis.conf
+    cat > deploy/redis.conf << 'EOL'
+bind 0.0.0.0
+protected-mode no
+port 6379
+EOL
+
+    # Create fluent-bit.conf
+    cat > deploy/fluent-bit.conf << 'EOL'
+[SERVICE]
+    Flush        1
+    Log_Level    info
+
+[INPUT]
+    Name        tail
+    Path        /var/log/infernet_node.log
+    Tag         infernet
+
+[OUTPUT]
+    Name        stdout
+    Match       *
+EOL
+
     # Install Foundry
     echo -e "\nInstalling Foundry..."
-    cd "$HOME"
-    curl -L https://foundry.paradigm.xyz | bash
-    echo 'export PATH="$HOME/.foundry/bin:$PATH"' >> ~/.bashrc
-    source ~/.bashrc
-    foundryup
+    if ! command -v forge >/dev/null; then
+        curl -L https://foundry.paradigm.xyz | bash
+        echo 'export PATH="$HOME/.foundry/bin:$PATH"' >> ~/.bashrc
+        source ~/.bashrc
+        foundryup
+    fi
 
     # Setup contracts
     echo -e "\nSetting up contracts..."
     cd ~/infernet-container-starter/projects/hello-world/contracts
     rm -rf lib/forge-std lib/infernet-sdk
-    forge install foundry-rs/forge-std
-    forge install ritual-net/infernet-sdk
+    forge install foundry-rs/forge-std --no-commit
+    forge install ritual-net/infernet-sdk --no-commit
 
     # Start services
     echo -e "\nStarting Docker services..."
-    cd "$HOME"
-    docker compose -f infernet-container-starter/deploy/docker-compose.yaml up -d
+    cd ~/infernet-container-starter
+    docker compose -f deploy/docker-compose.yaml up -d
 
     # Deploy contracts
     echo -e "\nDeploying contracts..."
     cd ~/infernet-container-starter
-    if output=$(project=hello-world make deploy-contracts 2>&1); then
-        contract_address=$(echo "$output" | grep -oP 'Contract Address: \K0x\S+')
+    if output=$(PRIVATE_KEY="$PRIVATE_KEY" RPC_URL="$RPC_URL" make -C projects/hello-world/contracts deploy 2>&1); then
+        contract_address=$(echo "$output" | grep -oP 'Deployed SaysHello: \K0x\S+')
+        if [ -z "$contract_address" ]; then
+            echo "Error: Could not extract contract address"
+            echo "$output"
+            exit 1
+        fi
         echo "Contract deployed at: $contract_address"
-        
-        # Update call contract script
-        sed -i "s/SaysGM(.*)/SaysGM($contract_address)/" projects/hello-world/contracts/script/CallContract.s.sol
-        
+
+        # Create CallContract.s.sol
+        cat > projects/hello-world/contracts/script/CallContract.s.sol << EOL
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+pragma solidity ^0.8.13;
+
+import {Script, console2} from "forge-std/Script.sol";
+import {SaysGM} from "../src/SaysGM.sol";
+
+contract CallContract is Script {
+    function run() public {
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        vm.startBroadcast(deployerPrivateKey);
+
+        SaysGM saysGm = SaysGM($contract_address);
+        saysGm.sayGM();
+
+        vm.stopBroadcast();
+    }
+}
+EOL
+
         # Call contract
         echo -e "\nCalling contract..."
-        project=hello-world make call-contract
-        
+        if ! PRIVATE_KEY="$PRIVATE_KEY" RPC_URL="$RPC_URL" make -C projects/hello-world/contracts call-contract; then
+            echo "Error: Failed to call contract"
+            exit 1
+        fi
+
         # Final output
         echo -e "\n\nInstallation completed successfully!"
         echo "========================================"
