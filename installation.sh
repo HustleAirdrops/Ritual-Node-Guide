@@ -1,165 +1,142 @@
 #!/bin/bash
 
-# Node Installation Script
-# Purpose: Infernet node setup with Docker, Foundry, and contract deployment
-# Date: June 08, 2025
+# Exit on error, unset variable, and pipeline failure
+set -euo pipefail
 
-# Configuration Variables
-LOG_FILE="$HOME/node_installation.log"
-CONTRACT_ADDRESS_FILE="$HOME/contract_address.txt"
-CONFIG_DIR="$HOME/infernet-container-starter"
-TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-
-# Color Codes for Output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Logging Function
-log() {
-    echo "[$TIMESTAMP] $1" >> "$LOG_FILE"
-    echo -e "${2:-$NC}$1${NC}"
-}
-
-# Error Handling Function
-error_exit() {
-    log "ERROR: $1" "$RED"
-    exit 1
-}
-
-# Check Command Status
-check_status() {
-    local exit_code=$?
-    local message=$1
-    local allow_timeout=$2
-    if [ "$allow_timeout" = "allow_timeout" ]; then
-        if [ $exit_code -ne 0 ] && [ $exit_code -ne 124 ] && [ $exit_code -ne 143 ]; then
-            error_exit "$message"
-        fi
+# Function for secure user input
+secure_input() {
+    local prompt="$1"
+    local var_name="$2"
+    local hidden="$3"
+    
+    if [ "$hidden" = true ]; then
+        IFS= read -rsp "$prompt: " $var_name
+        echo
     else
-        if [ $exit_code -ne 0 ]; then
-            error_exit "$message"
-        fi
+        read -rp "$prompt: " $var_name
     fi
 }
 
-# Validate Private Key Format
+# Function to validate Ethereum private key
 validate_private_key() {
-    local key=$1
-    if [[ ! $key =~ ^0x[0-9a-fA-F]{64}$ ]]; then
-        error_exit "Invalid private key format. Must start with '0x' followed by 64 hexadecimal characters."
-    fi
+    [[ "$1" =~ ^0x[a-fA-F0-9]{64}$ ]] || {
+        echo "Invalid private key format. Must start with 0x followed by 64 hex characters"
+        return 1
+    }
 }
 
-# Validate RPC URL Format
+# Function to validate RPC URL
 validate_rpc_url() {
-    local url=$1
-    if [[ ! $url =~ ^https?://[a-zA-Z0-9.-]+ ]]; then
-        error_exit "Invalid RPC URL format. Must start with http:// or https://."
+    [[ "$1" =~ ^https?://.+\..+ ]] || {
+        echo "Invalid RPC URL format"
+        return 1
+    }
+}
+
+# Function to replace placeholders in files
+replace_placeholder() {
+    local file="$1"
+    local placeholder="$2"
+    local value="$3"
+    
+    if [ -f "$file" ]; then
+        sed -i "s/$placeholder/$value/g" "$file"
+    else
+        echo "Error: File $file not found for replacement"
+        return 1
     fi
 }
 
-# Initialize Log
-echo "Node Installation Log - $TIMESTAMP" > "$LOG_FILE"
-log "Starting node installation process..."
+# Function to handle container deployment with timeout
+deploy_with_timeout() {
+    local timeout=8
+    echo "Starting container deployment (will auto-stop after ${timeout}s)..."
+    
+    # Start in background
+    project=hello-world make deploy-container > /dev/null 2>&1 &
+    local pid=$!
+    
+    # Wait for specified time
+    sleep $timeout
+    
+    # Stop the process
+    if kill -0 $pid > /dev/null 2>&1; then
+        kill -TERM $pid
+        wait $pid
+    fi
+    echo "Container deployment stopped"
+}
 
-# **Step 1: Update System and Install Dependencies**
-log "Updating system and installing dependencies..." "$YELLOW"
-cd "$HOME" || error_exit "Failed to change to home directory"
-sudo apt update && sudo apt upgrade -y
-check_status "Failed to update system packages"
-sudo apt -qy install curl git nano jq lz4 build-essential screen -y
-check_status "Failed to install basic dependencies"
-sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
-check_status "Failed to install additional dependencies"
-
-# **Step 2: Install Docker**
-log "Installing Docker..." "$YELLOW"
-if ! command -v docker &> /dev/null; then
+# Main installation process
+install_infernet_node() {
+    echo "Starting Infernet Node installation..."
+    
+    # System updates
+    echo -e "\nUpdating system packages..."
+    sudo apt update -y && sudo apt upgrade -y
+    sudo apt -qy install curl git nano jq lz4 build-essential screen apt-transport-https ca-certificates software-properties-common
+    
+    # Docker installation
+    echo -e "\nInstalling Docker..."
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-    check_status "Failed to add Docker GPG key"
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    check_status "Failed to add Docker repository"
-    sudo apt update && sudo apt install -y docker-ce
-    check_status "Failed to install Docker"
+    sudo apt update -y && sudo apt install -y docker-ce
     sudo systemctl enable --now docker
-    check_status "Failed to enable Docker service"
     sudo usermod -aG docker "$USER"
-    check_status "Failed to add user to Docker group"
-    newgrp docker
-else
-    log "Docker is already installed, skipping." "$GREEN"
-fi
-
-# **Step 3: Install Docker Compose**
-log "Installing Docker Compose..." "$YELLOW"
-if ! command -v docker-compose &> /dev/null; then
-    DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)
-    sudo curl -L "https://github.com/docker/compose/releases/download/$DOCKER_COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    check_status "Failed to download Docker Compose"
+    
+    # Docker Compose installation
+    echo -e "\nInstalling Docker Compose..."
+    local compose_url=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r '.assets[].browser_download_url | select(contains("linux-x86_64"))')
+    sudo curl -L "$compose_url" -o /usr/local/bin/docker-compose
     sudo chmod +x /usr/local/bin/docker-compose
-    check_status "Failed to set Docker Compose permissions"
-else
-    log "Docker Compose is already installed, skipping." "$GREEN"
-fi
-
-# **Step 4: Configure UFW Firewall**
-log "Configuring UFW firewall..." "$YELLOW"
-if ! command -v ufw &> /dev/null; then
+    
+    # Firewall setup
+    echo -e "\nConfiguring firewall..."
     sudo apt install ufw -y
-    check_status "Failed to install UFW"
-fi
-sudo ufw allow 22
-sudo ufw allow 3000
-sudo ufw allow 4000
-sudo ufw allow 6379
-sudo ufw allow 8545
-sudo ufw allow ssh
-sudo ufw --force enable
-check_status "Failed to configure UFW"
-
-# **Step 5: Clone Repository and Modify Port**
-log "Cloning repository and modifying port..." "$YELLOW"
-if [ ! -d "$CONFIG_DIR" ]; then
-    git clone https://github.com/ritual-net/infernet-container-starter "$CONFIG_DIR"
-    check_status "Failed to clone repository"
-fi
-cd "$CONFIG_DIR" || error_exit "Failed to change to $CONFIG_DIR"
-find . -type f -exec grep -l "3000" {} + | xargs sed -i 's/3000/8600/g'
-check_status "Failed to replace port 3000 with 8600"
-
-# **Step 6: Pull and Run Hello-World Container for 5 Seconds**
-log "Pulling hello-world Docker image..." "$YELLOW"
-docker pull ritualnetwork/hello-world-infernet:latest
-check_status "Failed to pull Docker image"
-
-log "Running project=hello-world make deploy-container for 5 seconds..." "$YELLOW"
-cd "$CONFIG_DIR" || error_exit "Failed to change to $CONFIG_DIR"
-if [ ! -f "Makefile" ]; then
-    error_exit "Makefile not found in $CONFIG_DIR"
-fi
-timeout 5s env project=hello-world make deploy-container
-check_status "Failed to run make deploy-container" "allow_timeout"
-
-log "Stopping running containers..." "$YELLOW"
-docker compose -f deploy/docker-compose.yaml stop
-check_status "Failed to stop containers"
-
-# **Step 7: Prompt for Private Key and RPC URL**
-log "Prompting for private key and RPC URL..." "$YELLOW"
-read -s -p "Enter your EVM wallet private key (must start with 0x): " PRIVATE_KEY
-echo
-validate_private_key "$PRIVATE_KEY"
-read -p "Enter your Base Mainnet RPC URL: " RPC_URL
-validate_rpc_url "$RPC_URL"
-
-# **Step 8: Update deploy/config.json**
-log "Updating deploy/config.json..." "$YELLOW"
-CONFIG_FILE="$CONFIG_DIR/deploy/config.json"
-rm -f "$CONFIG_FILE"
-cat << EOF > "$CONFIG_FILE"
-{
+    sudo ufw allow 22
+    sudo ufw allow 3000
+    sudo ufw allow 4000
+    sudo ufw allow 6379
+    sudo ufw allow 8545
+    sudo ufw allow 8600
+    sudo ufw allow ssh
+    echo "y" | sudo ufw enable
+    
+    # Clone and modify project
+    echo -e "\nSetting up project..."
+    cd "$HOME"
+    git clone https://github.com/ritual-net/infernet-container-starter
+    cd infernet-container-starter
+    grep -rl "3000" . | xargs sed -i 's/3000/8600/g'
+    
+    # Pull Docker image
+    echo -e "\nPulling container image..."
+    docker pull ritualnetwork/hello-world-infernet:latest
+    
+    # Deploy container with timeout
+    deploy_with_timeout
+    
+    # Get user inputs
+    echo -e "\nEnter your credentials:"
+    while true; do
+        secure_input "Enter Base RPC URL" RPC_URL false
+        validate_rpc_url "$RPC_URL" && break
+    done
+    
+    while true; do
+        secure_input "Enter EVM private key (0x...)" PRIVATE_KEY true
+        validate_private_key "$PRIVATE_KEY" && break
+    done
+    
+    # Generate escaped values for sed
+    ESC_RPC_URL=$(printf '%s\n' "$RPC_URL" | sed 's:[\/&]:\\&:g;$!s/$/\\/')
+    ESC_PRIVATE_KEY=$(printf '%s\n' "$PRIVATE_KEY" | sed 's:[\/&]:\\&:g;$!s/$/\\/')
+    
+    # Configuration files setup
+    echo -e "\nConfiguring application..."
+    
+    # Create config files
+    CONFIG_CONTENT='{
     "log_path": "infernet_node.log",
     "server": {
         "port": 4000,
@@ -171,11 +148,11 @@ cat << EOF > "$CONFIG_FILE"
     "chain": {
         "enabled": true,
         "trail_head_blocks": 3,
-        "rpc_url": "$RPC_URL",
+        "rpc_url": "RPC_URL",
         "registry_address": "0x3B1554f346DFe5c482Bb4BA31b880c1C18412170",
         "wallet": {
           "max_gas_limit": 4000000,
-          "private_key": "$PRIVATE_KEY",
+          "private_key": "PRIVATE_KEY",
           "allowed_sim_errors": []
         },
         "snapshot_sync": {
@@ -196,83 +173,25 @@ cat << EOF > "$CONFIG_FILE"
             "id": "hello-world",
             "image": "ritualnetwork/hello-world-infernet:latest",
             "external": true,
-            "port": "3000",
+            "port": "8600",
             "allowed_delegate_addresses": [],
             "allowed_addresses": [],
             "allowed_ips": [],
-            "command": "--bind=0.0.0.0:3000 --workers=2",
+            "command": "--bind=0.0.0.0:8600 --workers=2",
             "env": {},
             "volumes": [],
             "accepted_payments": {},
             "generates_proofs": false
         }
     ]
-}
-EOF
-check_status "Failed to create deploy/config.json"
-
-# **Step 9: Update projects/hello-world/container/config.json**
-log "Updating projects/hello-world/container/config.json..." "$YELLOW"
-CONFIG_FILE="$CONFIG_DIR/projects/hello-world/container/config.json"
-rm -f "$CONFIG_FILE"
-cat << EOF > "$CONFIG_FILE"
-{
-    "log_path": "infernet_node.log",
-    "server": {
-        "port": 4000,
-        "rate_limit": {
-            "num_requests": 100,
-            "period": 100
-        }
-    },
-    "chain": {
-        "enabled": true,
-        "trail_head_blocks": 3,
-        "rpc_url": "$RPC_URL",
-        "registry_address": "0x3B1554f346DFe5c482Bb4BA31b880c1C18412170",
-        "wallet": {
-          "max_gas_limit": 4000000,
-          "private_key": "$PRIVATE_KEY",
-          "allowed_sim_errors": []
-        },
-        "snapshot_sync": {
-          "sleep": 3,
-          "batch_size": 500,
-          "starting_sub_id": 240000,
-          "sync_period": 30
-        }
-    },
-    "startup_wait": 1.0,
-    "redis": {
-        "host": "redis",
-        "port": 6379
-    },
-    "forward_stats": true,
-    "containers": [
-        {
-            "id": "hello-world",
-            "image": "ritualnetwork/hello-world-infernet:latest",
-            "external": true,
-            "port": "3000",
-            "allowed_delegate_addresses": [],
-            "allowed_addresses": [],
-            "allowed_ips": [],
-            "command": "--bind=0.0.0.0:3000 --workers=2",
-            "env": {},
-            "volumes": [],
-            "accepted_payments": {},
-            "generates_proofs": false
-        }
-    ]
-}
-EOF
-check_status "Failed to create projects/hello-world/container/config.json"
-
-# **Step 10: Update Deploy.s.sol**
-log "Updating Deploy.s.sol..." "$YELLOW"
-DEPLOY_FILE="$CONFIG_DIR/projects/hello-world/contracts/script/Deploy.s.sol"
-rm -f "$DEPLOY_FILE"
-cat <<EOF > "$DEPLOY_FILE"
+}'
+    
+    # Write config files
+    echo "$CONFIG_CONTENT" | sed "s/RPC_URL/$ESC_RPC_URL/g; s/PRIVATE_KEY/$ESC_PRIVATE_KEY/g" > deploy/config.json
+    echo "$CONFIG_CONTENT" | sed "s/RPC_URL/$ESC_RPC_URL/g; s/PRIVATE_KEY/$ESC_PRIVATE_KEY/g" > projects/hello-world/container/config.json
+    
+    # Create contract deployment script
+    cat > projects/hello-world/contracts/script/Deploy.s.sol << 'EOL'
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.13;
 
@@ -299,36 +218,28 @@ contract Deploy is Script {
         vm.broadcast();
     }
 }
-EOF
-check_status "Failed to create Deploy.s.sol"
+EOL
 
-# **Step 11: Update Makefile**
-log "Updating Makefile..." "$YELLOW"
-MAKEFILE="$CONFIG_DIR/projects/hello-world/contracts/Makefile"
-rm -f "$MAKEFILE"
-cat << EOF > "$MAKEFILE"
-# phony targets
-.PHONY: deploy
+    # Create Makefile
+    cat > projects/hello-world/contracts/Makefile << EOL
+# phony targets are targets that don't actually create a file
+.phony: deploy
 
 # anvil's third default address
-sender:=$PRIVATE_KEY
-RPC_URL:=$RPC_URL
+sender := $PRIVATE_KEY
+RPC_URL := $RPC_URL
 
 # deploying the contract
 deploy:
-    @PRIVATE_KEY=\$(sender) forge script script/Deploy.s.sol:Deploy --broadcast --rpc-url \$(RPC_URL)
+	@PRIVATE_KEY=\$(sender) forge script script/Deploy.s.sol:Deploy --broadcast --rpc-url \$(RPC_URL)
 
 # calling sayGM()
 call-contract:
-    @PRIVATE_KEY=\$(sender) forge script script/CallContract.s.sol:CallContract --broadcast --rpc-url \$(RPC_URL)
-EOF
-check_status "Failed to create Makefile"
+	@PRIVATE_KEY=\$(sender) forge script script/CallContract.s.sol:CallContract --broadcast --rpc-url \$(RPC_URL)
+EOL
 
-# **Step 12: Update docker-compose.yaml**
-log "Updating docker-compose.yaml..." "$YELLOW"
-DOCKER_COMPOSE="$CONFIG_DIR/deploy/docker-compose.yaml"
-rm -f "$DOCKER_COMPOSE"
-cat <<EOF > "$DOCKER_COMPOSE"
+    # Create docker-compose.yaml
+    cat > deploy/docker-compose.yaml << 'EOL'
 services:
   node:
     image: ritualnetwork/infernet-node:1.4.0
@@ -354,7 +265,7 @@ services:
   redis:
     image: redis:7.4.0
     ports:
-      - "6379:6379"
+    - "6379:6379"
     networks:
       - network
     volumes:
@@ -394,102 +305,55 @@ networks:
 volumes:
   node-logs:
   redis-data:
-EOF
-check_status "Failed to create docker-compose.yaml"
+EOL
 
-# **Step 13: Install Foundry**
-log "Installing Foundry..." "$YELLOW"
-if ! command -v forge &> /dev/null; then
+    # Install Foundry
+    echo -e "\nInstalling Foundry..."
+    cd "$HOME"
     curl -L https://foundry.paradigm.xyz | bash
-    check_status "Failed to install Foundry"
-    echo 'export PATH="$HOME/.foundry/bin:$PATH"' >> "$HOME/.bashrc"
-    source "$HOME/.bashrc"
+    echo 'export PATH="$HOME/.foundry/bin:$PATH"' >> ~/.bashrc
+    source ~/.bashrc
     foundryup
-    check_status "Failed to update Foundry"
-else
-    log "Foundry is already installed, skipping." "$GREEN"
-fi
 
-# **Step 14: Install Forge Dependencies**
-log "Installing Forge dependencies..." "$YELLOW"
-cd "$CONFIG_DIR/projects/hello-world/contracts" || error_exit "Failed to change to contracts directory"
-rm -rf lib/forge-std lib/infernet-sdk
-forge install foundry-rs/forge-std
-check_status "Failed to install forge-std"
-forge install ritual-net/infernet-sdk
-check_status "Failed to install infernet-sdk"
-ls -ld "$CONFIG_DIR/projects/hello-world/contracts/lib/forge-std" || error_exit "forge-std lib not found"
-ls -ld "$CONFIG_DIR/projects/hello-world/contracts/lib/infernet-sdk" || error_exit "infernet-sdk lib not found"
+    # Setup contracts
+    echo -e "\nSetting up contracts..."
+    cd ~/infernet-container-starter/projects/hello-world/contracts
+    rm -rf lib/forge-std lib/infernet-sdk
+    forge install foundry-rs/forge-std
+    forge install ritual-net/infernet-sdk
 
-# **Step 15: Start Docker Compose**
-log "Starting Docker Compose..." "$YELLOW"
-cd "$HOME" || error_exit "Failed to change to home directory"
-docker compose -f "$CONFIG_DIR/deploy/docker-compose.yaml" up -d
-check_status "Failed to start Docker Compose"
+    # Start services
+    echo -e "\nStarting Docker services..."
+    cd "$HOME"
+    docker compose -f infernet-container-starter/deploy/docker-compose.yaml up -d
 
-# **Step 16: Deploy Contracts and Capture Address**
-log "Deploying contracts..." "$YELLOW"
-cd "$CONFIG_DIR" || error_exit "Failed to change to $CONFIG_DIR"
-CONTRACT_OUTPUT=$(env project=hello-world make deploy-contracts 2>&1)
-check_status "Failed to deploy contracts"
-CONTRACT_ADDRESS=$(echo "$CONTRACT_OUTPUT" | grep "Deployed SaysHello" | awk '{print $3}' | head -n 1)
-if [ -z "$CONTRACT_ADDRESS" ]; then
-    log "Contract output for debugging: $CONTRACT_OUTPUT" "$YELLOW"
-    error_exit "Failed to extract contract address"
-fi
-echo "$CONTRACT_ADDRESS" > "$CONTRACT_ADDRESS_FILE"
-log "Contract Address: $CONTRACT_ADDRESS saved to $CONTRACT_ADDRESS_FILE" "$GREEN"
-
-# **Step 17: Update CallContract.s.sol**
-log "Updating CallContract.s.sol..." "$YELLOW"
-CALL_CONTRACT_FILE="$CONFIG_DIR/projects/hello-world/contracts/script/CallContract.s.sol"
-cat << EOF > "$CALL_CONTRACT_FILE"
-// SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.0;
-
-import {Script, console2} from "forge-std/Script.sol";
-import {SaysGM} from "../src/SaysGM.sol";
-
-contract CallContract is Script {
-    function run() public {
-        // Setup wallet
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(deployerPrivateKey);
-
-        SaysGM saysGm = SaysGM($CONTRACT_ADDRESS);
-
-        saysGm.sayGM();
-
-        vm.stopBroadcast();
-    }
+    # Deploy contracts
+    echo -e "\nDeploying contracts..."
+    cd ~/infernet-container-starter
+    if output=$(project=hello-world make deploy-contracts 2>&1); then
+        contract_address=$(echo "$output" | awk '/Contract Address:/ {print $3}')
+        echo "Contract deployed at: $contract_address"
+        
+        # Update call contract script
+        sed -i "s/SaysGM(.*)/SaysGM($contract_address)/" projects/hello-world/contracts/script/CallContract.s.sol
+        
+        # Call contract
+        echo -e "\nCalling contract..."
+        project=hello-world make call-contract
+        
+        # Final output
+        echo -e "\n\nInstallation completed successfully!"
+        echo "========================================"
+        echo "Infernet Node running on port 4000"
+        echo "Container running on port 8600"
+        echo "Contract address: $contract_address"
+        echo "========================================"
+    else
+        echo "Contract deployment failed:"
+        echo "$output"
+        exit 1
+    fi
 }
-EOF
-check_status "Failed to update CallContract.s.sol"
 
-# **Step 18: Call Contract**
-log "Calling contract..." "$YELLOW"
-cd "$CONFIG_DIR" || error_exit "Failed to change to $CONFIG_DIR"
-env project=hello-world make call-contract
-check_status "Failed to call contract"
-
-# **Step 19: Display Completion Message**
-log "Node installation and configuration completed successfully!" "$GREEN"
-cat << EOF
-
-Congratulations! Your node is set up. Save the following details:
-
-- **Contract Address**: $CONTRACT_ADDRESS
-- **Log File**: $LOG_FILE
-- **Contract Address File**: $CONTRACT_ADDRESS_FILE
-- **Important Notes**:
-  - Keep your private key and RPC URL secure.
-  - Check $LOG_FILE for troubleshooting.
-  - Node is running in the background via Docker Compose.
-
-To monitor the node:
-$ docker compose -f $CONFIG_DIR/deploy/docker-compose.yaml logs -f
-
-Thank you for using this script!
-EOF
-
-log "Installation process completed." "$GREEN"
+# Run installation
+install_infernet_node
