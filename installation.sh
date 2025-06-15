@@ -84,7 +84,9 @@ install_ritual() {
   echo "Cloning repository..."
   git clone https://github.com/ritual-net/infernet-container-starter
   cd infernet-container-starter
-  
+  find ~/infernet-container-starter -type f -exec sed -i 's/3000/39459/g' {} +
+  yes | sudo ufw allow 39459
+
   # Create config files
   echo "Creating configuration files..."
   
