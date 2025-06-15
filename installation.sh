@@ -1,158 +1,96 @@
 #!/bin/bash
 
-# Exit on error, unset variable, and pipeline failure
-set -euo pipefail
-
-# Function for secure user input
-secure_input() {
-    local prompt="$1"
-    local var_name="$2"
-    local hidden="$3"
-    
-    if [ "$hidden" = true ]; then
-        IFS= read -rsp "$prompt: " "$var_name"
-        echo
-    else
-        read -rp "$prompt: " "$var_name"
-    fi
+# Function to display logo
+display_logo() {
+  sleep 2
+  curl -s https://raw.githubusercontent.com/HustleAirdrops/Ritual-Node-Guide/main/logo.sh | bash
+  sleep 1
 }
 
-# Function to validate Ethereum private key
-validate_private_key() {
-    [[ "$1" =~ ^0x[a-fA-F0-9]{64}$ ]] || {
-        echo "Invalid private key format. Must start with 0x followed by 64 hex characters"
-        return 1
-    }
+# Function to display menu
+display_menu() {
+  clear
+  display_logo
+  echo "===================================================="
+  echo "     RITUAL NETWORK INFERNET AUTO INSTALLER         "
+  echo "===================================================="
+  echo ""
+  echo "Please select an option:"
+  echo "1) Install Ritual Network Infernet"
+  echo "2) Uninstall Ritual Network Infernet"
+  echo "3) Exit"
+  echo ""
+  echo "===================================================="
+  read -p "Enter your choice (1-3): " choice
 }
 
-# Function to validate RPC URL
-validate_rpc_url() {
-    [[ "$1" =~ ^https?://.+\..+ ]] || {
-        echo "Invalid RPC URL format"
-        return 1
-    }
-}
-
-# Function to replace placeholders in files
-replace_placeholder() {
-    local file="$1"
-    local placeholder="$2"
-    local value="$3"
-    
-    if [ -f "$file" ]; then
-        sed -i "s/$placeholder/$value/g" "$file"
-        else
-            echo "Error: File $file not found for replacement"
-            return 1
-        fi
-    }
-
-# Function to check if a command exists
-check_command() {
-    if ! command -v "$1" >/dev/null; then
-        echo "Error: $1 is not installed but is required."
-        exit 1
-    fi
-}
-
-# Function to handle container deployment
-deploy_container() {
-    echo "Starting container deployment..."
-    if ! project=hello-world; then
-        make deploy-container
-        echo "Container deployed successfully"
-    else
-        echo "Error: Failed to deploy container"
-        exit 1
-    fi
-}
-
-# Main installation process
-install_infernet_node() {
-    echo "Starting Infernet Node Installation..."
-
-    # Check for required commands
-    check_command "curl"
-    check_command "git"
-    check_command "jq"
-
-    # System updates
-    echo -e "\nUpdating system packages..."
-    sudo DEBIAN_FRONTEND=noninteractive apt update -y
-    sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y
-    sudo DEBIAN_FRONTEND=noninteractive apt -y install curl git nano jq lz4 build-essential screen apt-transport-https ca-certificates software-properties-common
-
-    # Install Docker
-    echo -e "\nInstalling Docker..."
-    if ! command -v docker >/dev/null; then
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-        sudo DEBIAN_FRONTEND=noninteractive apt update -y
-        sudo DEBIAN_FRONTEND=noninteractive apt install -y docker-ce docker-ce-cli containerd.io
-    fi
-    sudo systemctl enable --now docker
-    sudo usermod -aG docker "$USER"
-
-    # Install Docker Compose
-    echo -e "\nInstalling Docker Compose..."
-    if ! command -v docker-compose >/dev/null; then
-        COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)
-        sudo curl -L "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        sudo chmod +x /usr/local/bin/docker-compose
-    fi
-
-    # Firewall setup
-    echo -e "\nConfiguring firewall..."
-    sudo DEBIAN_FRONTEND=noninteractive apt install ufw -y
-    sudo ufw allow 22
-    sudo ufw allow 3000
-    sudo ufw allow 4000
-    sudo ufw allow 6379
-    sudo ufw allow 8545
-    sudo ufw allow 8600
-    sudo ufw allow ssh
-    echo "y" | sudo ufw enable
-
-    # Clone and setup project
-    echo -e "\nSetting up project..."
-    cd "$HOME"
-    [ -d "infernet-container-starter" ] && rm -rf infernet-container-starter
-    git clone https://github.com/ritual-net/infernet-container-starter
-    cd infernet-container-starter
-    # Update port mappings
-    find . -type f -exec sed -i 's/3000/8600/g' {} +
-
-    # Pull Docker image
-    echo -e "\nPulling container image..."
-    if ! docker pull ritualnetwork/hello-world-infernet:latest; then
-        echo "Error: Failed to pull Docker image"
-        exit 1
-    fi
-
-    # Deploy container
-    deploy_container
-
-    # Get user inputs
-    echo -e "\nEnter your credentials:"
-    while true; do
-        secure_input "Enter Base RPC URL" RPC_URL false
-        validate_rpc_url "$RPC_URL" && break
-    done
-    
-    while true; do
-        secure_input "Enter EVM private key (0x...)" PRIVATE_KEY true
-        validate_private_key "$PRIVATE_KEY" && break
-    done
-
-    # Generate escaped values for sed
-    ESC_RPC_URL=$(printf '%s\n' "$RPC_URL" | sed 's:[\/&]:\\&:g')
-    ESC_PRIVATE_KEY=$(printf '%s\n' "$PRIVATE_KEY" | sed 's:[\/&]:\\&:g')
-
-    # Configuration files setup
-    echo -e "\nConfiguring application..."
-
-    # Create config files
-    CONFIG_CONTENT='{
+# Function to install Ritual Network Infernet
+install_ritual() {
+  clear
+  display_logo
+  echo "===================================================="
+  echo "     ?? INSTALLING RITUAL NETWORK INFERNET ??       "
+  echo "===================================================="
+  echo ""
+  
+  # Ask for private key with hidden input
+  echo "Please enter your private key (with 0x prefix if needed)"
+  echo "Note: Input will be hidden for security"
+  read -s private_key
+  echo "Private key received (hidden for security)"
+  
+  # Add 0x prefix if missing
+  if [[ ! $private_key =~ ^0x ]]; then
+    private_key="0x$private_key"
+    echo "Added 0x prefix to private key"
+  fi
+  
+  # Ask for RPC URL from user
+  echo "Please enter the RPC URL (e.g., https://mainnet.base.org/):"
+  read rpc_url
+  echo "RPC URL received: $rpc_url"
+  
+  echo "Installing dependencies..."
+  
+  # Update packages & build tools
+  sudo apt update && sudo apt upgrade -y
+  sudo apt -qy install curl git jq lz4 build-essential screen
+  
+  # Install Docker
+  echo "Installing Docker..."
+  sudo apt-get update
+  sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+    $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  sudo apt-get update
+  sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+  sudo docker run hello-world
+  
+  # Install Docker Compose
+  echo "Installing Docker Compose..."
+  sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  sudo chmod +x /usr/local/bin/docker-compose
+  DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+  mkdir -p $DOCKER_CONFIG/cli-plugins
+  curl -SL https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+  chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+  docker compose version
+  sudo usermod -aG docker $USER
+  docker run hello-world
+  
+  # Clone Repository
+  echo "Cloning repository..."
+  git clone https://github.com/ritual-net/infernet-container-starter
+  cd infernet-container-starter
+  
+  # Create config files
+  echo "Creating configuration files..."
+  
+  # Create config.json with private key and user-provided RPC URL
+  cat > ~/infernet-container-starter/deploy/config.json << EOL
+{
     "log_path": "infernet_node.log",
     "server": {
         "port": 4000,
@@ -164,17 +102,17 @@ install_infernet_node() {
     "chain": {
         "enabled": true,
         "trail_head_blocks": 3,
-        "rpc_url": "RPC_URL",
+        "rpc_url": "${rpc_url}",
         "registry_address": "0x3B1554f346DFe5c482Bb4BA31b880c1C18412170",
         "wallet": {
           "max_gas_limit": 4000000,
-          "private_key": "PRIVATE_KEY",
+          "private_key": "${private_key}",
           "allowed_sim_errors": []
         },
         "snapshot_sync": {
           "sleep": 3,
-          "batch_size": 500,
-          "starting_sub_id": 240000,
+          "batch_size": 10000,
+          "starting_sub_id": 180000,
           "sync_period": 30
         }
     },
@@ -189,25 +127,25 @@ install_infernet_node() {
             "id": "hello-world",
             "image": "ritualnetwork/hello-world-infernet:latest",
             "external": true,
-            "port": "8600",
+            "port": "3000",
             "allowed_delegate_addresses": [],
             "allowed_addresses": [],
             "allowed_ips": [],
-            "command": "--bind=0.0.0.0:8600 --workers=2",
+            "command": "--bind=0.0.0.0:3000 --workers=2",
             "env": {},
             "volumes": [],
             "accepted_payments": {},
             "generates_proofs": false
         }
     ]
-}'
+}
+EOL
 
-    # Write config files
-    echo "$CONFIG_CONTENT" | sed "s/RPC_URL/$ESC_RPC_URL/g; s/PRIVATE_KEY/$ESC_PRIVATE_KEY/g" > deploy/config.json
-    echo "$CONFIG_CONTENT" | sed "s/RPC_URL/$ESC_RPC_URL/g; s/PRIVATE_KEY/$ESC_PRIVATE_KEY/g" > projects/hello-world/container/config.json
-
-    # Create contract deployment script
-    cat > projects/hello-world/contracts/script/Deploy.s.sol << 'EOL'
+  # Copy config to container folder
+  cp ~/infernet-container-starter/deploy/config.json ~/infernet-container-starter/projects/hello-world/container/config.json
+  
+  # Create Deploy.s.sol
+  cat > ~/infernet-container-starter/projects/hello-world/contracts/script/Deploy.s.sol << EOL
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.13;
 
@@ -231,190 +169,338 @@ contract Deploy is Script {
 
         // Execute
         vm.stopBroadcast();
+        vm.broadcast();
     }
 }
 EOL
 
-    # Create Makefile
-    cat > projects/hello-world/contracts/Makefile << EOL
-.PHONY: deploy call-contract
+  # Create Makefile with user-provided RPC URL
+  cat > ~/infernet-container-starter/projects/hello-world/contracts/Makefile << EOL
+# phony targets are targets that don't actually create a file
+.phony: deploy
 
-sender := $PRIVATE_KEY
-RPC_URL := $RPC_URL
+# anvil's third default address
+sender := ${private_key}
+RPC_URL := ${rpc_url}
 
+# deploying the contract
 deploy:
-    @PRIVATE_KEY=\$(sender) forge script script/Deploy.s.sol:Deploy --broadcast --rpc-url \$(RPC_URL) --legacy
+    @PRIVATE_KEY=\$(sender) forge script script/Deploy.s.sol:Deploy --broadcast --rpc-url \$(RPC_URL)
 
+# calling sayGM()
 call-contract:
-    @PRIVATE_KEY=\$(sender) forge script script/CallContract.s.sol:CallContract --broadcast --rpc-url \$(RPC_URL) --legacy
+    @PRIVATE_KEY=\$(sender) forge script script/CallContract.s.sol:CallContract --broadcast --rpc-url \$(RPC_URL)
 EOL
 
-    # Create docker-compose.yaml
-    cat > deploy/docker-compose.yaml << 'EOL'
-services:
-  node:
-    image: ritualnetwork/infernet-node:1.4.0
-    ports:
-      - "0.0.0.0:4000:4000"
-    volumes:
-      - ./config.json:/app/config.json
-      - node-logs:/logs
-      - /var/run/docker.sock:/var/run/docker.sock
-    tty: true
-    networks:
-      - network
-    depends_on:
-      - redis
-      - infernet-anvil
-    restart:
-      on-failure
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    stop_grace_period: 1m
-    container_name: infernet-node
+  # Edit node version in docker-compose.yaml
+  sed -i 's/infernet-node:.*/infernet-node:1.4.0/g' ~/infernet-container-starter/deploy/docker-compose.yaml
+  
+  # Deploy container using systemd instead of screen
+  echo "Creating systemd service for Ritual Network..."
+  cd ~/infernet-container-starter
+  
+  # Create a script to be run by systemd
+  cat > ~/ritual-service.sh << EOL
+#!/bin/bash
+cd ~/infernet-container-starter
+echo "Starting container deployment at \$(date)" > ~/ritual-deployment.log
+project=hello-world make deploy-container >> ~/ritual-deployment.log 2>&1
+echo "Container deployment completed at \$(date)" >> ~/ritual-deployment.log
 
-  redis:
-    image: redis:7.4.0
-    ports:
-      - "6379:6379"
-    networks:
-      - network
-    volumes:
-      - ./redis.conf:/usr/local/etc/redis/redis.conf
-      - redis-data:/data
-    restart:
-      on-failure
-    container_name: infernet-redis
+# Keep containers running
+cd ~/infernet-container-starter
+while true; do
+  echo "Checking containers at \$(date)" >> ~/ritual-deployment.log
+  if ! docker ps | grep -q "infernet"; then
+    echo "Containers stopped. Restarting at \$(date)" >> ~/ritual-deployment.log
+    docker compose -f deploy/docker-compose.yaml up -d >> ~/ritual-deployment.log 2>&1
+  else
+    echo "Containers running normally at \$(date)" >> ~/ritual-deployment.log
+  fi
+  sleep 300
+done
+EOL
+  
+  chmod +x ~/ritual-service.sh
+  
+  # Create systemd service file
+  sudo tee /etc/systemd/system/ritual-network.service > /dev/null << EOL
+[Unit]
+Description=Ritual Network Infernet Service
+After=network.target docker.service
+Requires=docker.service
 
-  fluentbit:
-    image: fluent/fluent-bit:3.1.4
-    expose:
-      - "24224"
-    environment:
-      - FLUENTBIT_CONFIG_PATH=/fluent-bit/etc/fluent-bit.conf
-    volumes:
-      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
-      - /var/log:/var/log:ro
-    networks:
-      - network
-    restart:
-      on-failure
-    container_name: infernet-fluentbit
+[Service]
+Type=simple
+User=root
+ExecStart=/bin/bash /root/ritual-service.sh
+Restart=always
+RestartSec=30
+StandardOutput=append:/root/ritual-service.log
+StandardError=append:/root/ritual-service.log
 
-  infernet-anvil:
-    image: ritualnetwork/infernet-anvil:1.0.0
-    command: --host 0.0.0.0 --port 3000 --load-state infernet_deployed.json -b 1
-    ports:
-      - "8545:3000"
-    networks:
-      - network
-    container_name: infernet-anvil
-
-networks:
-  network:
-
-volumes:
-  node-logs:
-  redis-data:
+[Install]
+WantedBy=multi-user.target
 EOL
 
-    # Create redis.conf
-    cat > deploy/redis.conf << 'EOL'
-bind 0.0.0.0
-protected-mode no
-port 6379
-EOL
-
-    # Create fluent-bit.conf
-    cat > deploy/fluent-bit.conf << 'EOL'
-[SERVICE]
-    Flush        1
-    Log_Level    info
-
-[INPUT]
-    Name        tail
-    Path        /var/log/infernet_node.log
-    Tag         infernet
-
-[OUTPUT]
-    Name        stdout
-    Match       *
-EOL
-
-    # Install Foundry
-    echo -e "\nInstalling Foundry..."
-    if ! command -v forge >/dev/null; then
-        curl -L https://foundry.paradigm.xyz | bash
-        echo 'export PATH="$HOME/.foundry/bin:$PATH"' >> ~/.bashrc
-        source ~/.bashrc
-        foundryup
+  # Reload systemd, enable and start service
+  sudo systemctl daemon-reload
+  sudo systemctl enable ritual-network.service
+  sudo systemctl start ritual-network.service
+  
+  # Verify service is running
+  sleep 5
+  if sudo systemctl is-active --quiet ritual-network.service; then
+    echo "? Ritual Network service started successfully!"
+  else
+    echo "?? Warning: Service might not have started correctly. Checking status..."
+    sudo systemctl status ritual-network.service
+  fi
+  
+  echo "Service logs are being saved to ~/ritual-deployment.log"
+  echo "You can check service status with: sudo systemctl status ritual-network.service"
+  echo "Continuing with installation..."
+  echo ""
+  
+  # Wait a bit for deployment to start
+  echo "Waiting for deployment to initialize..."
+  sleep 10
+  
+  # Check service status again
+  echo "Verifying service status..."
+  if sudo systemctl is-active --quiet ritual-network.service; then
+    echo "? Ritual Network service is running properly."
+  else
+    echo "?? Service not running correctly. Attempting to restart..."
+    sudo systemctl restart ritual-network.service
+    sleep 5
+    sudo systemctl status ritual-network.service
+  fi
+  
+  # Start containers
+  echo "Starting containers..."
+  docker compose -f deploy/docker-compose.yaml up -d
+  
+  # Install Foundry
+  echo "Installing Foundry..."
+  cd
+  mkdir -p foundry
+  cd foundry
+  
+  # Kill any running anvil processes
+  pkill anvil 2>/dev/null || true
+  sleep 2
+  
+  # Install Foundry
+  curl -L https://foundry.paradigm.xyz | bash
+  source ~/.bashrc
+  
+  echo "Executing foundryup..."
+  export PATH="$HOME/.foundry/bin:$PATH"
+  $HOME/.foundry/bin/foundryup || foundryup
+  
+  # Check if forge is in standard path, if not update PATH
+  if ! command -v forge &> /dev/null; then
+    echo "Adding Foundry to PATH..."
+    export PATH="$HOME/.foundry/bin:$PATH"
+    echo 'export PATH="$PATH:$HOME/.foundry/bin"' >> ~/.bashrc
+    
+    # Check if there's an old forge binary
+    if [ -f /usr/bin/forge ]; then
+      echo "Removing old forge binary..."
+      sudo rm /usr/bin/forge
     fi
-
-    # Setup contracts
-    echo -e "\nSetting up contracts..."
-    cd ~/infernet-container-starter/projects/hello-world/contracts
-    rm -rf lib/forge-std lib/infernet-sdk
-    forge install foundry-rs/forge-std --no-commit
-    forge install ritual-net/infernet-sdk --no-commit
-
-    # Start services
-    echo -e "\nStarting Docker services..."
-    cd ~/infernet-container-starter
-    docker compose -f deploy/docker-compose.yaml up -d
-
-    # Deploy contracts
-    echo -e "\nDeploying contracts..."
-    cd ~/infernet-container-starter
-    if output=$(PRIVATE_KEY="$PRIVATE_KEY" RPC_URL="$RPC_URL" make -C projects/hello-world/contracts deploy 2>&1); then
-        contract_address=$(echo "$output" | grep -oP 'Deployed SaysHello: \K0x\S+')
-        if [ -z "$contract_address" ]; then
-            echo "Error: Could not extract contract address"
-            echo "$output"
-            exit 1
-        fi
-        echo "Contract deployed at: $contract_address"
-
-        # Create CallContract.s.sol
-        cat > projects/hello-world/contracts/script/CallContract.s.sol << EOL
+  fi
+  
+  # Install libraries with proper error handling
+  echo "Installing required libraries..."
+  cd ~/infernet-container-starter/projects/hello-world/contracts
+  
+  # Remove existing libs if they exist
+  rm -rf lib/forge-std 2>/dev/null || true
+  rm -rf lib/infernet-sdk 2>/dev/null || true
+  
+  # Try installing with forge-std
+  echo "Installing forge-std..."
+  forge install --no-commit foundry-rs/forge-std || $HOME/.foundry/bin/forge install --no-commit foundry-rs/forge-std
+  
+  # Verify forge-std was installed
+  if [ ! -d "lib/forge-std" ]; then
+    echo "Retrying forge-std installation..."
+    rm -rf lib/forge-std 2>/dev/null || true
+    $HOME/.foundry/bin/forge install --no-commit foundry-rs/forge-std
+  fi
+  
+  # Try installing infernet-sdk
+  echo "Installing infernet-sdk..."
+  forge install --no-commit ritual-net/infernet-sdk || $HOME/.foundry/bin/forge install --no-commit ritual-net/infernet-sdk
+  
+  # Verify infernet-sdk was installed
+  if [ ! -d "lib/infernet-sdk" ]; then
+    echo "Retrying infernet-sdk installation..."
+    rm -rf lib/infernet-sdk 2>/dev/null || true
+    $HOME/.foundry/bin/forge install --no-commit ritual-net/infernet-sdk
+  fi
+  
+  # Return to root directory
+  cd ~/infernet-container-starter
+  
+  # Restart Docker containers again
+  echo "Restarting Docker containers one more time..."
+  docker compose -f deploy/docker-compose.yaml down
+  docker rm -f infernet-fluentbit infernet-redis infernet-anvil infernet-node 2>/dev/null || true
+  docker compose -f deploy/docker-compose.yaml up -d
+  
+  # Deploy consumer contract
+  echo "Deploying consumer contract..."
+  export PRIVATE_KEY="${private_key#0x}"  # Remove 0x prefix if present for foundry
+  cd ~/infernet-container-starter
+  
+  # Run deployment and capture output to extract contract address
+  echo "Running contract deployment and capturing address..."
+  deployment_output=$(project=hello-world make deploy-contracts 2>&1)
+  echo "$deployment_output" > ~/deployment-output.log
+  
+  # Extract contract address using grep and regex pattern
+  contract_address=$(echo "$deployment_output" | grep -oE "Contract Address: 0x[a-fA-F0-9]+" | awk '{print $3}')
+  
+  if [ -z "$contract_address" ]; then
+    echo "?? Could not extract contract address automatically."
+    echo "Please check ~/deployment-output.log and enter the contract address manually:"
+    read -p "Paste Your Address on basescan, Copy Smartcontract and paste Here (in format 0x...): " contract_address
+  else
+    echo "? Successfully extracted contract address: $contract_address"
+  fi
+  
+  # Save contract address for future use
+  echo "$contract_address" > ~/contract-address.txt
+  
+  # Update CallContract.s.sol with the new contract address
+  echo "Updating CallContract.s.sol with contract address: $contract_address"
+  cat > ~/infernet-container-starter/projects/hello-world/contracts/script/CallContract.s.sol << EOL
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.13;
 
-import {Script, console2} from "forge-std/Script.sol";
+import {Script} from "forge-std/Script.sol";
 import {SaysGM} from "../src/SaysGM.sol";
 
 contract CallContract is Script {
     function run() public {
+        // Setup wallet
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
 
+        // Call the contract
         SaysGM saysGm = SaysGM($contract_address);
         saysGm.sayGM();
 
+        // Execute
         vm.stopBroadcast();
+        vm.broadcast();
     }
 }
 EOL
 
-        # Call contract
-        echo -e "\nCalling contract..."
-        if ! PRIVATE_KEY="$PRIVATE_KEY" RPC_URL="$RPC_URL" make -C projects/hello-world/contracts call-contract; then
-            echo "Error: Failed to call contract"
-            exit 1
-        fi
-
-        # Final output
-        echo -e "\n\nInstallation completed successfully!"
-        echo "========================================"
-        echo "Infernet Node running on port 4000"
-        echo "Container running on port 8600"
-        echo "Contract address: $contract_address"
-        echo "========================================"
-    else
-        echo "Contract deployment failed:"
-        echo "$output"
-        exit 1
-    fi
+  # Call the contract
+  echo "Calling contract to test functionality..."
+  cd ~/infernet-container-starter
+  project=hello-world make call-contract
+  
+  echo "Checking if containers are running..."
+  docker ps | grep infernet
+  
+  echo "Checking node logs..."
+  docker logs infernet-node 2>&1 | tail -n 20
+  
+  echo ""
+  echo "Press any key to return to menu..."
+  read -n 1
 }
 
-# Run installation
-install_infernet_node
+# Function to uninstall Ritual Network Infernet
+uninstall_ritual() {
+  clear
+  display_logo
+  echo "===================================================="
+  echo "     ?? UNINSTALLING RITUAL NETWORK INFERNET ??    "
+  echo "===================================================="
+  echo ""
+  
+  read -p "Are you sure you want to uninstall? (y/n): " confirm
+  if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+    echo "Uninstallation cancelled."
+    echo "Press any key to return to menu..."
+    read -n 1
+    return
+  fi
+  
+  echo "Stopping and removing systemd service..."
+  # Stop and disable systemd service
+  sudo systemctl stop ritual-network.service
+  sudo systemctl disable ritual-network.service
+  sudo rm /etc/systemd/system/ritual-network.service
+  sudo systemctl daemon-reload
+  
+  echo "Stopping and removing Docker containers..."
+  # Stop and remove Docker containers
+  docker compose -f ~/infernet-container-starter/deploy/docker-compose.yaml down 2>/dev/null
+  
+  # Remove the containers manually if they still exist
+  echo "Removing containers if they exist..."
+  docker rm -f infernet-fluentbit infernet-redis infernet-anvil infernet-node 2>/dev/null || true
+  
+  echo "Removing installation files..."
+  # Remove installation directories and scripts
+  rm -rf ~/infernet-container-starter
+  rm -rf ~/foundry
+  rm -f ~/ritual-service.sh
+  rm -f ~/ritual-deployment.log
+  rm -f ~/ritual-service.log
+  
+  echo "Cleaning up Docker resources..."
+  # Remove unused Docker resources
+  docker system prune -f
+  
+  echo ""
+  echo "===================================================="
+  echo "? RITUAL NETWORK INFERNET UNINSTALLATION COMPLETE ?"
+  echo "===================================================="
+  echo ""
+  echo "If you want to completely remove Docker as well, run these commands:"
+  echo "sudo apt-get purge docker-ce docker-ce-cli containerd.io"
+  echo "sudo rm -rf /var/lib/docker"
+  echo "sudo rm -rf /etc/docker"
+  echo ""
+  echo "Press any key to return to menu..."
+  read -n 1
+}
+
+# Main program
+main() {
+  while true; do
+    display_menu
+    
+    case $choice in
+      1)
+        install_ritual
+        ;;
+      2)
+        uninstall_ritual
+        ;;
+      3)
+        clear
+        display_logo
+        echo "Thank you for using the Ritual Network Infernet Auto Installer!"
+        echo "Exiting..."
+        exit 0
+        ;;
+      *)
+        echo "Invalid option. Press any key to try again..."
+        read -n 1
+        ;;
+    esac
+  done
+}
+
+# Run the main program
+main
