@@ -58,35 +58,33 @@ install_ritual() {
   
   # Install Docker
   echo "Installing Docker..."
-  sudo apt-get update
+  sudo apt-get update -y
   sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-  echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
-    $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-  sudo apt-get update
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  sudo apt-get update -y
   sudo apt-get install -y docker-ce docker-ce-cli containerd.io
   sudo docker run hello-world
+
   
   # Install Docker Compose
-  echo "Installing Docker Compose..."
   sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
   sudo chmod +x /usr/local/bin/docker-compose
   DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
   mkdir -p $DOCKER_CONFIG/cli-plugins
-  curl -SL https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+  cp /usr/local/bin/docker-compose $DOCKER_CONFIG/cli-plugins/docker-compose
   chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
   docker compose version
   sudo usermod -aG docker $USER
+  newgrp docker
   docker run hello-world
+
   
   # Clone Repository
   echo "Cloning repository..."
   git clone https://github.com/ritual-net/infernet-container-starter
   cd infernet-container-starter
-  find ~/infernet-container-starter -type f -exec sed -i 's/3000/39459/g' {} +
-  yes | sudo ufw allow 39459
-
+  
   # Create config files
   echo "Creating configuration files..."
   
@@ -290,7 +288,7 @@ EOL
   cd foundry
   
   # Kill any running anvil processes
-  pkill anvil 2>/dev/null || true
+  sudo pkill -9 anvil
   sleep 2
   
   # Install Foundry
@@ -324,24 +322,24 @@ EOL
   
   # Try installing with forge-std
   echo "Installing forge-std..."
-  forge install --no-commit foundry-rs/forge-std || $HOME/.foundry/bin/forge install --no-commit foundry-rs/forge-std
+  forge install foundry-rs/forge-std || $HOME/.foundry/bin/forge install foundry-rs/forge-std
   
   # Verify forge-std was installed
   if [ ! -d "lib/forge-std" ]; then
     echo "Retrying forge-std installation..."
     rm -rf lib/forge-std 2>/dev/null || true
-    $HOME/.foundry/bin/forge install --no-commit foundry-rs/forge-std
+    $HOME/.foundry/bin/forge install foundry-rs/forge-std
   fi
   
   # Try installing infernet-sdk
   echo "Installing infernet-sdk..."
-  forge install --no-commit ritual-net/infernet-sdk || $HOME/.foundry/bin/forge install --no-commit ritual-net/infernet-sdk
+  forge install ritual-net/infernet-sdk || $HOME/.foundry/bin/forge install ritual-net/infernet-sdk
   
   # Verify infernet-sdk was installed
   if [ ! -d "lib/infernet-sdk" ]; then
     echo "Retrying infernet-sdk installation..."
     rm -rf lib/infernet-sdk 2>/dev/null || true
-    $HOME/.foundry/bin/forge install --no-commit ritual-net/infernet-sdk
+    $HOME/.foundry/bin/forge install ritual-net/infernet-sdk
   fi
   
   # Return to root directory
