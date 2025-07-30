@@ -82,14 +82,6 @@ confirm() {
     esac
 }
 
-show_name() {
-   echo ""
-   show_gold '░░░░░░░█▀▀█░▀█▀░▀█▀░█░░█░█▀▀█░█░░░░░░░░░█▄░░█░█▀▀█░█▀▀▄░█▀▀▀░░░░░░░'
-   show_gold '░░░░░░░█▄▄▀░░█░░░█░░█░░█░█▀▀█░█░░░░░░░░░█░█░█░█░░█░█░░█░█▀▀▀░░░░░░░'
-   show_gold '░░░░░░░█░░█░▄█▄░░█░░▀▄▄▀░█░░█░█▄▄█░░░░░░█░░▀█░█▄▄█░█▄▄▀░█▄▄▄░░░░░░░'
-   echo ""
-}
-
 show_menu() {
     show_logotip
     show_name
@@ -108,7 +100,10 @@ show_menu() {
     for action in "${actions[@]}"; do
         show "$action"
     done
+
+    read -p $'\nEnter your choice: ' choice
 }
+
 
 if [ "$EUID" -ne 0 ]; then
   show_war "⚠️ Please run the script as root."
