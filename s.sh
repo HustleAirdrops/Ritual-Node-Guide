@@ -498,10 +498,8 @@ menu() {
 
 # Main loop
 while true; do
-    show_menu
     echo
-    read -p "Your choice: " choice
-    menu "$choice"
+    menu 1
     echo
 done
 
