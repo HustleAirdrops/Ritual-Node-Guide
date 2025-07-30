@@ -84,7 +84,6 @@ confirm() {
 
 show_menu() {
     show_logotip
-    show_name
     show_bold 'Select an action: '
     echo ''
     actions=(
@@ -497,9 +496,12 @@ menu() {
     esac
 }
 
+# Main loop
 while true; do
     show_menu
-    show_bold 'Your choice: '
-    read choice
+    echo
+    read -p "Your choice: " choice
     menu "$choice"
+    echo
 done
+
