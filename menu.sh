@@ -69,6 +69,12 @@ install_ritual() {
   sudo apt update && sudo apt install -y docker-ce && sudo systemctl enable --now docker || { echo "Error: Failed to install Docker."; exit 1; }
   sudo usermod -aG docker "$USER" && echo "Added user to docker group. Log out and back in for changes to take effect."
 
+  echo "Checking Docker daemon access..."
+  if ! sudo docker version > /dev/null 2>&1; then
+    echo "Error: Cannot connect to Docker daemon. Ensure Docker is running and you have permissions."
+    exit 1
+  fi
+
   LATEST_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r '.tag_name' || echo "v2.29.2")
   sudo curl -L "https://github.com/docker/compose/releases/download/$LATEST_COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose || { echo "Error: Failed to download Docker Compose."; exit 1; }
   sudo chmod +x /usr/local/bin/docker-compose
@@ -76,7 +82,7 @@ install_ritual() {
   echo "Configuring firewall..."
   sudo apt install ufw -y || { echo "Error: Failed to install ufw."; exit 1; }
   sudo ufw allow 22
-  sudo ufw allow 3000
+  sudo ufw allow 8600
   sudo ufw allow 4000
   sudo ufw allow 6379
   sudo ufw allow 8545
@@ -89,9 +95,9 @@ install_ritual() {
   [ -d "$CONFIG_DIR" ] && grep -rl "3000" . | xargs sed -i 's/3000/8600/g'
 
   echo "Pulling Docker image..."
-  docker pull ritualnetwork/hello-world-infernet:latest || { echo "Error: Failed to pull Docker image."; exit 1; }
+  sudo docker pull ritualnetwork/hello-world-infernet:latest || { echo "Error: Failed to pull Docker image."; exit 1; }
   project=hello-world make deploy-container || { echo "Error: Failed to deploy container."; exit 1; }
-  docker compose -f deploy/docker-compose.yaml stop
+  sudo docker compose -f deploy/docker-compose.yaml stop
 
   echo "Creating configuration files..."
   cat > "$CONFIG_DIR/deploy/config.json" << EOL
@@ -200,7 +206,7 @@ EOL
   chmod 600 "$CONFIG_DIR/projects/hello-world/container/config.json"
 
   cat > "$CONFIG_DIR/projects/hello-world/contracts/script/Deploy.s.sol" << EOL
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// SPDX-License-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.13;
 import {Script, console2} from "forge-std/Script.sol";
 import {SaysGM} from "../src/SaysGM.sol";
@@ -272,7 +278,6 @@ services:
       - /var/log:/var/log:ro
     networks:
       - network
-
     restart:
       on-failure
     container_name: infernet-fluentbit
@@ -303,9 +308,9 @@ echo "Container deployment completed at \$(date)" >> $LOG_FILE
 cd $CONFIG_DIR
 while true; do
   echo "Checking containers at \$(date)" >> $LOG_FILE
-  if ! docker ps | grep -q "infernet"; then
+  if ! sudo docker ps | grep -q "infernet"; then
     echo "Containers stopped. Restarting at \$(date)" >> $LOG_FILE
-    docker compose -f deploy/docker-compose.yaml up -d >> $LOG_FILE 2>&1
+    sudo docker compose -f deploy/docker-compose.yaml up -d >> $LOG_FILE 2>&1
   else
     echo "Containers running normally at \$(date)" >> $LOG_FILE
   fi
@@ -361,7 +366,7 @@ EOL
 
   echo "Starting containers..."
   cd "$HOME_DIR" || exit 1
-  docker compose -f "$CONFIG_DIR/deploy/docker-compose.yaml" up -d || { echo "Error: Failed to start containers."; exit 1; }
+  sudo docker compose -f "$CONFIG_DIR/deploy/docker-compose.yaml" up -d || { echo "Error: Failed to start containers."; exit 1; }
   cd "$CONFIG_DIR" || exit 1
 
   echo "Deploying contract..."
@@ -384,7 +389,7 @@ EOL
 
   echo "Updating CallContract.s.sol..."
   cat > "$CONFIG_DIR/projects/hello-world/contracts/script/CallContract.s.sol" << EOL
-// SPDX-License-Identifier: BSD-3-Clause-Clear
+// SPDX-License-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.13;
 import {Script} from "forge-std/Script.sol";
 import {SaysGM} from "../src/SaysGM.sol";
@@ -402,9 +407,9 @@ EOL
   project=hello-world make call-contract || { echo "Error: Failed to call contract."; exit 1; }
 
   echo "Checking containers..."
-  docker ps | grep infernet || { echo "Error: No infernet containers running."; exit 1; }
+  sudo docker ps | grep infernet || { echo "Error: No infernet containers running."; exit 1; }
   echo "Checking node logs..."
-  docker logs infernet-node 2>&1 | tail -n 20
+  sudo docker logs infernet-node 2>&1 | tail -n 20
 
   echo ""
   echo "===================================================="
@@ -439,10 +444,10 @@ uninstall_ritual() {
   sudo systemctl disable ritual-network.service 2>/dev/null || true
   sudo rm -f /etc/systemd/system/ritual-network.service
   sudo systemctl daemon-reload
-  docker compose -f "$CONFIG_DIR/deploy/docker-compose.yaml" down 2>/dev/null || true
-  docker rm -f infernet-fluentbit infernet-redis infernet-anvil infernet-node 2>/dev/null || true
+  sudo docker compose -f "$CONFIG_DIR/deploy/docker-compose.yaml" down 2>/dev/null || true
+  sudo docker rm -f infernet-fluentbit infernet-redis infernet-anvil infernet-node 2>/dev/null || true
   rm -rf "$CONFIG_DIR" "$HOME_DIR/foundry" "$HOME_DIR/ritual-service.sh" "$HOME_DIR/ritual-deployment.log" "$HOME_DIR/ritual-service.log" "$HOME_DIR/deployment-output.log" "$HOME_DIR/contract-address.txt"
-  docker system prune -f
+  sudo docker system prune -f
   sudo userdel -r ritual 2>/dev/null || true
   echo ""
   echo "===================================================="
